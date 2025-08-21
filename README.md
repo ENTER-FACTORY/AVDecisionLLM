@@ -8,7 +8,7 @@ AVDecisionLLM is an innovative approach to autonomous vehicle decision-making th
 [![TRL](https://img.shields.io/badge/TRL-Latest-green.svg)](https://github.com/huggingface/trl)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
- 🎯 Overview
+## 🎯 Overview
 
 Traditional autonomous driving systems rely heavily on rule-based decision-making and classical machine learning approaches. AVDecisionLLM introduces a paradigm shift by:
 
@@ -19,7 +19,7 @@ Traditional autonomous driving systems rely heavily on rule-based decision-makin
 
 ## 📊 Dataset
 
- DAIR-V2X-Seq Dataset
+### DAIR-V2X-Seq Dataset
 
 Our training data is sourced from the **DAIR-V2X-Seq** dataset, a comprehensive collection of Vehicle-to-Everything (V2X) sequential data for autonomous driving research.
 
@@ -96,9 +96,9 @@ graph TD
     style S fill:#fff3e0
 ```
 
- Detailed Training Process
+### Detailed Training Process
 
- Phase 1: Cold Start Supervised Fine-Tuning (SFT)
+#### Phase 1: Cold Start Supervised Fine-Tuning (SFT)
 1. **Data Preparation**: Convert V2X sequential data into natural language descriptions
 2. **Initial Training**: Perform supervised fine-tuning on driving scenario descriptions
 3. **Base Model Creation**: Establish foundational understanding of driving contexts
@@ -115,45 +115,14 @@ graph TD
 3. **Dataset Enhancement**: Augment training data with successful examples
 4. **Refined SFT**: Perform additional supervised fine-tuning on enhanced dataset
 
-## 🚀 Getting Started
-
-### Installation
+## 🚀 Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/AVDecisionLLM.git
-cd AVDecisionLLM
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Install TRL framework
-pip install trl transformers datasets accelerate wandb
+# Install TRL framework (includes all necessary dependencies)
+pip install trl
 ```
 
-### Quick Start
-
-```python
-from av_decision_llm import AVDecisionModel, DataProcessor
-
-# Initialize data processor
-processor = DataProcessor(dataset_path="path/to/dair-v2x-seq")
-
-# Process V2X data to text
-text_data = processor.convert_to_text()
-
-# Initialize model
-model = AVDecisionModel(
-    base_model="microsoft/DialoGPT-medium",
-    training_config="configs/sft_config.yaml"
-)
-
-# Start training pipeline
-model.train_pipeline(
-    sft_data=text_data,
-    grpo_config="configs/grpo_config.yaml"
-)
-```
+> **Note**: This is an ongoing research project. The implementation is currently under development and the associated paper is in preparation.
 
 ## 📈 Performance Metrics
 
@@ -175,24 +144,20 @@ AVDecisionLLM enables research in:
 
 ## 📚 Citation
 
-If you use AVDecisionLLM in your research, please cite:
+*Research paper in preparation. Citation information will be updated upon publication.*
 
 ```bibtex
 @misc{avdecisionllm2024,
   title={AVDecisionLLM: Autonomous Driving Decision System Powered by Large Language Models},
-  author={Your Name},
+  author={Research Team},
   year={2024},
-  howpublished={\url{https://github.com/your-username/AVDecisionLLM}}
+  note={Work in progress}
 }
 ```
 
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
-
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+*License information will be specified upon public release.*
 
 ## 🙏 Acknowledgments
 
@@ -202,11 +167,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Contact
 
-For questions and collaborations, please reach out:
-- Email: your.email@university.edu
-- GitHub Issues: [Open an Issue](https://github.com/your-username/AVDecisionLLM/issues)
-- Project Page: [AVDecisionLLM](https://your-username.github.io/AVDecisionLLM)
+For questions about this ongoing research project:
+- Email: [Contact information to be updated]
 
 ---
 
 *AVDecisionLLM: Bridging the gap between natural language understanding and autonomous driving intelligence.*
+
+**Status**: Research in Progress | **Paper**: In Preparation
