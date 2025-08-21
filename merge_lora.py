@@ -3,11 +3,10 @@
 合并LoRA权重到基础模型的脚本
 
 使用方法:
-python /home/haibenben/waz/trl/examples/scripts/merge_lora_weights.py \
-    --base_model_path /kpfs/model/Qwen2.5/Qwen2.5-32B \
-    --lora_weights_path ./sft_output/lora_weights \
-    --output_path ./merged_model \
-    --verify
+python merge_lora_weights.py \
+    --base_model_path /path/to/base/model \
+    --lora_weights_path /path/to/lora/weights \
+    --output_path /path/to/merged/model
 """
 
 import argparse
@@ -86,11 +85,10 @@ def merge_lora_weights(base_model_path, lora_weights_path, output_path, device_m
     
     tokenizer.save_pretrained(output_path)
     
-    # 保存模型配置信息
+    # 保存模型配置信息（移除了日期字段）
     config_info = {
         "base_model": base_model_path,
         "lora_weights": lora_weights_path,
-        "merge_date": torch.datetime.datetime.now().isoformat(),
         "torch_dtype": "bfloat16",
         "merged": True
     }
