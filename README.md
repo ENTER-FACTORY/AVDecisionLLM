@@ -142,33 +142,11 @@ AVDecisionLLM enables research in:
 - **Transfer Learning**: Adaptation to new driving environments
 - **Human-AI Interaction**: Natural communication between humans and autonomous systems
 
-## 📚 Citation
-
-*Research paper in preparation. Citation information will be updated upon publication.*
-
-```bibtex
-@misc{avdecisionllm2024,
-  title={AVDecisionLLM: Autonomous Driving Decision System Powered by Large Language Models},
-  author={Research Team},
-  year={2024},
-  note={Work in progress}
-}
-```
-
-## 📄 License
-
-*License information will be specified upon public release.*
-
-## 🙏 Acknowledgments
-
-- **DAIR-V2X-Seq Team** at AIR-THU for providing the comprehensive dataset
-- **Hugging Face TRL Team** for the excellent reinforcement learning framework
-- **Autonomous Driving Research Community** for continuous innovation and collaboration
 
 ## 📞 Contact
 
 For questions about this ongoing research project:
-- Email: [Contact information to be updated]
+- Email: [wanganzheng@whut.edu.cn]
 
 ---
 
