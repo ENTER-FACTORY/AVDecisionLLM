@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # Copyright 2020-2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,28 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# /// script
-# dependencies = [
-#     "trl @ git+https://github.com/huggingface/trl.git",
-#     "transformers",
-#     "datasets",
-#     "torch",
-#     "accelerate",
-# ]
-# ///
-
 """
-训练本地LLM模型进行监督微调(SFT)
-
-使用方法:
-accelerate launch --config_file examples/accelerate_configs/deepspeed_zero3.yaml sft_local_llm.py \
-    --model_path /path/to/your/local/model \
-    --dataset_path /path/to/your/local/dataset \
-    --output_dir ./output
+改进版 - 训练本地LLM模型进行监督微调(SFT)
+主要改进: 更合理的输出路径设置
 """
 
 import argparse
 import os
+from datetime import datetime
+from pathlib import Path
 from datasets import load_dataset, Dataset
 from transformers import (
     AutoModelForCausalLM, 
@@ -41,17 +29,95 @@ from transformers import (
 )
 from trl import SFTConfig, SFTTrainer
 import torch
+import json
+
+
+def generate_output_path(base_dir, model_path, dataset_path, lora_rank=8, lora_alpha=16, custom_suffix=""):
+    """
+    生成合理的输出路径
+    
+    Args:
+        base_dir: 基础输出目录
+        model_path: 模型路径
+        dataset_path: 数据集路径
+        lora_rank: LoRA rank
+        lora_alpha: LoRA alpha
+        custom_suffix: 自定义后缀
+    
+    Returns:
+        生成的输出路径
+    """
+    # 获取时间戳
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # 提取模型名称
+    model_name = Path(model_path).name
+    if model_name == ".":
+        model_name = Path(model_path).resolve().name
+    
+    # 提取数据集名称
+    dataset_name = Path(dataset_path).stem
+    
+    # 构建输出目录名称
+    dir_components = [
+        f"sft_{model_name}",
+        f"data_{dataset_name}",
+        f"lora_r{lora_rank}_a{lora_alpha}",
+        timestamp
+    ]
+    
+    if custom_suffix:
+        dir_components.insert(-1, custom_suffix)
+    
+    output_dir_name = "_".join(dir_components)
+    output_path = os.path.join(base_dir, output_dir_name)
+    
+    return output_path
+
+
+def save_training_metadata(output_dir, args, model_path, dataset_path, dataset_size):
+    """
+    保存训练元数据，便于后续追踪
+    """
+    metadata = {
+        "training_info": {
+            "timestamp": datetime.now().isoformat(),
+            "model_path": model_path,
+            "dataset_path": dataset_path,
+            "dataset_size": dataset_size,
+            "output_dir": output_dir
+        },
+        "training_args": {
+            "use_lora": args.use_lora,
+            "lora_rank": args.lora_rank,
+            "lora_alpha": args.lora_alpha,
+            "lora_dropout": args.lora_dropout,
+            "max_length": args.max_length,
+            "batch_size": args.batch_size,
+            "gradient_accumulation_steps": args.gradient_accumulation_steps,
+            "num_epochs": args.num_epochs,
+            "learning_rate": args.learning_rate,
+            "warmup_ratio": args.warmup_ratio
+        },
+        "paths": {
+            "base_model": model_path,
+            "dataset": dataset_path,
+            "lora_weights": os.path.join(output_dir, "lora_weights") if args.use_lora else None,
+            "merged_model_command": f"python merge_lora_weights.py --base_model_path {model_path} --lora_weights_path {os.path.join(output_dir, 'lora_weights')} --output_path ./merged_{Path(output_dir).name}"
+        }
+    }
+    
+    metadata_path = os.path.join(output_dir, "training_metadata.json")
+    with open(metadata_path, 'w', encoding='utf-8') as f:
+        json.dump(metadata, f, indent=2, ensure_ascii=False)
+    
+    print(f"📋 训练元数据已保存: {metadata_path}")
+    return metadata_path
 
 
 def format_instruction_data(example):
     """
     将包含instruction, input, output的数据格式化为训练用的text格式
-    
-    Args:
-        example: 包含'instruction', 'input', 'output'字段的数据样本
-    
-    Returns:
-        格式化后的文本
     """
     instruction = example.get('instruction', '')
     input_text = example.get('input', '')
@@ -59,10 +125,8 @@ def format_instruction_data(example):
     
     # 构建对话格式的prompt
     if input_text.strip():
-        # 如果有input字段，将instruction和input合并
         prompt = f"### Instruction:\n{instruction}\n\n### Input:\n{input_text}\n\n### Response:\n{output_text}"
     else:
-        # 如果没有input字段，只使用instruction
         prompt = f"### Instruction:\n{instruction}\n\n### Response:\n{output_text}"
     
     return {"text": prompt}
@@ -71,12 +135,6 @@ def format_instruction_data(example):
 def load_local_dataset(dataset_path):
     """
     加载本地数据集
-    
-    Args:
-        dataset_path: 数据集路径，支持json, jsonl, csv, parquet等格式
-    
-    Returns:
-        处理后的数据集
     """
     # 根据文件扩展名自动识别格式
     if dataset_path.endswith('.json'):
@@ -88,7 +146,6 @@ def load_local_dataset(dataset_path):
     elif dataset_path.endswith('.parquet'):
         dataset = load_dataset('parquet', data_files=dataset_path, split='train')
     elif os.path.isdir(dataset_path):
-        # 如果是目录，尝试加载目录下的所有支持格式的文件
         dataset = load_dataset(dataset_path, split='train')
     else:
         raise ValueError(f"不支持的数据集格式: {dataset_path}")
@@ -101,13 +158,7 @@ def load_local_dataset(dataset_path):
 
 def setup_model_and_tokenizer(model_path):
     """
-    设置模型和tokenizer（为后续GRPO训练保持完整精度）
-    
-    Args:
-        model_path: 本地模型路径
-    
-    Returns:
-        model, tokenizer
+    设置模型和tokenizer
     """
     # 加载tokenizer
     tokenizer = AutoTokenizer.from_pretrained(
@@ -123,8 +174,8 @@ def setup_model_and_tokenizer(model_path):
         else:
             tokenizer.add_special_tokens({"pad_token": "[PAD]"})
     
-    # 尝试使用Flash Attention 2，如果不可用则使用标准实现
-    attn_implementation = "eager"  # 默认使用标准实现
+    # 尝试使用Flash Attention 2
+    attn_implementation = "eager"
     try:
         import flash_attn
         attn_implementation = "flash_attention_2"
@@ -132,13 +183,13 @@ def setup_model_and_tokenizer(model_path):
     except ImportError:
         print("Flash Attention 2 未安装，使用标准注意力实现")
     
-    # 加载模型（保持bf16精度，不使用量化）
+    # 加载模型
     model = AutoModelForCausalLM.from_pretrained(
         model_path,
-        torch_dtype=torch.bfloat16,  # 使用bf16保持训练稳定性
+        torch_dtype=torch.bfloat16,
         trust_remote_code=True,
         attn_implementation=attn_implementation,
-        device_map="auto",  # 自动分配设备
+        device_map="auto",
     )
     
     return model, tokenizer
@@ -146,13 +197,13 @@ def setup_model_and_tokenizer(model_path):
 
 def setup_lora_config(r=8, lora_alpha=16, lora_dropout=0.1):
     """
-    设置LoRA配置（显存优化版本）
+    设置LoRA配置
     """
     from peft import LoraConfig, TaskType
     
     lora_config = LoraConfig(
         task_type=TaskType.CAUSAL_LM,
-        r=r,  # LoRA rank，更小的值需要更少显存
+        r=r,
         lora_alpha=lora_alpha,
         lora_dropout=lora_dropout,
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
@@ -162,17 +213,57 @@ def setup_lora_config(r=8, lora_alpha=16, lora_dropout=0.1):
     return lora_config
 
 
+def save_lora_model_properly(trainer, output_dir, tokenizer, base_model_path):
+    """
+    正确保存LoRA模型
+    """
+    print(f"正确保存LoRA模型到: {output_dir}")
+    
+    # 创建lora_weights目录
+    lora_weights_dir = os.path.join(output_dir, "lora_weights")
+    os.makedirs(lora_weights_dir, exist_ok=True)
+    
+    # 保存LoRA适配器权重
+    print("保存LoRA适配器权重...")
+    trainer.model.save_pretrained(lora_weights_dir)
+    
+    # 保存tokenizer到主目录
+    print("保存tokenizer...")
+    tokenizer.save_pretrained(output_dir)
+    
+    # 验证保存结果
+    adapter_config_path = os.path.join(lora_weights_dir, "adapter_config.json")
+    adapter_model_files = [f for f in os.listdir(lora_weights_dir) if f.startswith('adapter_model')]
+    
+    if os.path.exists(adapter_config_path) and adapter_model_files:
+        print("✅ LoRA权重保存成功")
+        print(f"   配置文件: {adapter_config_path}")
+        print(f"   权重文件: {adapter_model_files}")
+    else:
+        print("⚠️ LoRA权重保存可能有问题")
+    
+    return lora_weights_dir
+
+
 def main():
-    parser = argparse.ArgumentParser(description="本地LLM模型SFT训练（为GRPO做准备）")
-    parser.add_argument("--model_path", type=str, default="/kpfs/model/Qwen2.5/Qwen2.5-32B", help="本地模型路径")
+    parser = argparse.ArgumentParser(description="改进版 - 本地LLM模型SFT训练")
+    
+    # 基础参数
+    parser.add_argument("--model_path", type=str, default="/kpfs/model/Qwen2.5/Qwen2.5-32B-Instruct", help="本地模型路径")
     parser.add_argument("--dataset_path", type=str, default="/home/haibenben/waz/trl/data/v2x_seq_sft_thinking_builtin.json", help="本地数据集路径")
-    parser.add_argument("--output_dir", type=str, default="./sft_output", help="输出目录")
-    parser.add_argument("--use_lora", action="store_true", default=True, help="是否使用LoRA微调（显存不足时推荐）")
-    parser.add_argument("--max_length", type=int, default=1024, help="最大序列长度（减少显存占用）")
+    
+    # 输出路径相关参数
+    parser.add_argument("--base_output_dir", type=str, default="./experiments", help="基础输出目录")
+    parser.add_argument("--output_suffix", type=str, default="", help="输出目录自定义后缀")
+    parser.add_argument("--custom_output_dir", type=str, default="./Qwen2.5_32B_sft", help="完全自定义输出目录（会覆盖自动生成的路径）")
+    
+    # 训练参数
+    parser.add_argument("--use_lora", action="store_true", default=True, help="是否使用LoRA微调")
+    parser.add_argument("--max_length", type=int, default=1024, help="最大序列长度")
     parser.add_argument("--batch_size", type=int, default=4, help="每设备批大小")
-    parser.add_argument("--gradient_accumulation_steps", type=int, default=16, help="梯度累积步数（增加有效批大小）")
+    parser.add_argument("--gradient_accumulation_steps", type=int, default=16, help="梯度累积步数")
     parser.add_argument("--num_epochs", type=int, default=3, help="训练轮数")
-    parser.add_argument("--learning_rate", type=float, default=2e-4, help="学习率（LoRA用更大学习率）")
+    parser.add_argument("--learning_rate", type=float, default=2e-4, help="学习率")
     parser.add_argument("--warmup_ratio", type=float, default=0.03, help="预热比例")
     parser.add_argument("--save_steps", type=int, default=500, help="保存间隔步数")
     parser.add_argument("--logging_steps", type=int, default=10, help="日志记录间隔")
@@ -181,37 +272,61 @@ def main():
     parser.add_argument("--lr_scheduler_type", type=str, default="cosine", help="学习率调度器类型")
     parser.add_argument("--max_grad_norm", type=float, default=1.0, help="梯度裁剪阈值")
     
-    # 显存优化选项
-    parser.add_argument("--use_cpu_offload", action="store_true", help="启用CPU卸载（DeepSpeed Zero3）")
-    parser.add_argument("--use_8bit_optimizer", action="store_true", help="使用8bit优化器")
-    parser.add_argument("--lora_rank", type=int, default=8, help="LoRA rank（更小=更省显存）")
+    # LoRA参数
+    parser.add_argument("--lora_rank", type=int, default=8, help="LoRA rank")
     parser.add_argument("--lora_alpha", type=int, default=16, help="LoRA alpha")
     parser.add_argument("--lora_dropout", type=float, default=0.1, help="LoRA dropout")
     
+    # 优化选项
+    parser.add_argument("--use_cpu_offload", action="store_true", help="启用CPU卸载")
+    parser.add_argument("--use_8bit_optimizer", action="store_true", help="使用8bit优化器")
+    
     args = parser.parse_args()
     
-    print("=== 显存优化配置 ===")
-    print(f"使用LoRA: {args.use_lora}")
-    print(f"序列长度: {args.max_length}")
-    print(f"批大小: {args.batch_size}")
-    print(f"梯度累积: {args.gradient_accumulation_steps}")
-    print(f"LoRA rank: {args.lora_rank}")
-    print("===================")
+    # 生成或使用输出路径
+    if args.custom_output_dir:
+        output_dir = args.custom_output_dir
+        print(f"使用自定义输出目录: {output_dir}")
+    else:
+        output_dir = generate_output_path(
+            base_dir=args.base_output_dir,
+            model_path=args.model_path,
+            dataset_path=args.dataset_path,
+            lora_rank=args.lora_rank,
+            lora_alpha=args.lora_alpha,
+            custom_suffix=args.output_suffix
+        )
+        print(f"自动生成输出目录: {output_dir}")
     
-    print(f"加载数据集: {args.dataset_path}")
+    # 创建输出目录
+    os.makedirs(output_dir, exist_ok=True)
+    
+    print("=== 训练配置 ===")
+    print(f"模型路径: {args.model_path}")
+    print(f"数据集路径: {args.dataset_path}")
+    print(f"输出目录: {output_dir}")
+    print(f"使用LoRA: {args.use_lora}")
+    print(f"LoRA配置: rank={args.lora_rank}, alpha={args.lora_alpha}, dropout={args.lora_dropout}")
+    print(f"训练参数: epochs={args.num_epochs}, lr={args.learning_rate}, batch_size={args.batch_size}")
+    print("==================")
+    
     # 加载数据集
+    print(f"📂 加载数据集: {args.dataset_path}")
     train_dataset = load_local_dataset(args.dataset_path)
     print(f"数据集大小: {len(train_dataset)}")
     print(f"数据样本示例:\n{train_dataset[0]['text'][:200]}...")
     
-    print(f"加载模型: {args.model_path}")
-    # 加载模型和tokenizer（不使用量化，为GRPO训练做准备）
+    # 加载模型和tokenizer
+    print(f"🤖 加载模型: {args.model_path}")
     model, tokenizer = setup_model_and_tokenizer(args.model_path)
     
-    # 设置训练配置（参照原始例子，只保留核心参数）
+    # 保存训练元数据
+    save_training_metadata(output_dir, args, args.model_path, args.dataset_path, len(train_dataset))
+    
+    # 设置训练配置
     training_args = SFTConfig(
-        output_dir=args.output_dir,
-        bf16=True,  # 保持bf16，与后续GRPO训练兼容且节省显存
+        output_dir=output_dir,
+        bf16=True,
         gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
         max_length=args.max_length,
@@ -224,15 +339,13 @@ def main():
         save_strategy="steps",
         save_steps=args.save_steps,
         logging_steps=args.logging_steps,
-        logging_dir=f"{args.output_dir}/logs",
-        
-        # 显存优化配置
-        dataloader_pin_memory=False,  # 不固定内存
-        remove_unused_columns=True,   # 移除未使用的列
+        logging_dir=f"{output_dir}/logs",
+        dataloader_pin_memory=False,
+        remove_unused_columns=True,
         optim="paged_adamw_8bit" if args.use_8bit_optimizer else "adamw_torch",
     )
     
-    # 如果使用LoRA（强烈推荐用于显存不足的情况）
+    # 设置LoRA配置
     peft_config = None
     if args.use_lora:
         peft_config = setup_lora_config(
@@ -240,11 +353,11 @@ def main():
             lora_alpha=args.lora_alpha,
             lora_dropout=args.lora_dropout
         )
-        print(f"使用LoRA微调（rank={args.lora_rank}, alpha={args.lora_alpha}）")
+        print(f"✅ 使用LoRA微调（rank={args.lora_rank}, alpha={args.lora_alpha}）")
     else:
-        print("使用全参数微调（显存需求很大）")
+        print("⚠️ 使用全参数微调（显存需求很大）")
     
-    # 创建trainer（按照原始例子的简化参数）
+    # 创建trainer
     trainer = SFTTrainer(
         args=training_args,
         model=model,
@@ -253,22 +366,32 @@ def main():
     )
     
     # 开始训练
-    print("开始SFT训练（为后续GRPO训练做准备）...")
+    print("🚀 开始SFT训练...")
     trainer.train()
     
-    # 保存模型
-    print(f"保存模型到: {args.output_dir}")
-    trainer.save_model()
-    tokenizer.save_pretrained(args.output_dir)
-    
-    # 如果使用了LoRA，也保存LoRA权重
+    # 正确保存模型
     if args.use_lora:
-        trainer.model.save_pretrained(f"{args.output_dir}/lora_weights")
-        print("LoRA权重已保存，后续GRPO训练需要先合并权重")
+        print("💾 保存LoRA模型...")
+        lora_weights_dir = save_lora_model_properly(trainer, output_dir, tokenizer, args.model_path)
+        
+        print(f"\n✅ SFT训练完成！")
+        print(f"📁 输出目录: {output_dir}")
+        print(f"🔗 LoRA权重: {lora_weights_dir}")
+        print(f"\n📋 下一步合并权重:")
+        model_name = Path(args.model_path).name
+        merged_dir = f"./merged_{Path(output_dir).name}"
+        print(f"python fixed_merge_lora.py \\")
+        print(f"    --base_model_path {args.model_path} \\")
+        print(f"    --lora_weights_path {lora_weights_dir} \\")
+        print(f"    --output_path {merged_dir}")
+        
     else:
-        print("全参数模型已保存，可直接用于GRPO训练")
+        print("💾 保存全参数模型...")
+        trainer.save_model()
+        tokenizer.save_pretrained(output_dir)
+        print(f"✅ 全参数模型已保存到: {output_dir}")
     
-    print("SFT训练完成！模型已为GRPO训练做好准备。")
+    print(f"\n🎉 训练完成！所有文件保存在: {output_dir}")
 
 
 if __name__ == "__main__":
