@@ -120,9 +120,59 @@ graph TD
 ```bash
 # Install TRL framework (includes all necessary dependencies)
 pip install trl
+
+# For deployment and inference
+pip install vllm
 ```
 
-> **Note**: This is an ongoing research project. The implementation is currently under development and the associated paper is in preparation.
+## 🔧 Model Deployment and Inference
+
+### Step 1: Model Merging
+
+After training, merge the LoRA adapters with the base model:
+
+```bash
+python /home/haibenben/waz/trl/examples/scripts/merge_lora.py \
+    --base_model_path /kpfs/model/Qwen2.5/Qwen2.5-32B-Instruct \
+    --lora_weights_path /home/haibenben/waz/trl/Qwen2.5_32B_sft/lora_weights \
+    --output_path ./merged_model_clean
+```
+
+### Step 2: Start vLLM Inference Server
+
+Launch the vLLM server to serve your trained model:
+
+```bash
+vllm serve ./merged_model_clean \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --served-model-name AVDecisionLLM \
+    --trust-remote-code
+```
+
+### Step 3: Test the Model
+
+**Quick test with curl:**
+
+```bash
+# Check available models
+curl http://localhost:8000/v1/models
+
+# Test with a driving scenario
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "AVDecisionLLM",
+    "messages": [
+      {
+        "role": "user",
+        "content": "车辆在十字路口遇到黄灯，前方有行人过马路，应该如何决策？"
+      }
+    ],
+    "max_tokens": 512,
+    "temperature": 0.3
+  }'
+```
 
 ## 📈 Performance Metrics
 
@@ -133,6 +183,8 @@ Our evaluation framework includes:
 - **Comfort Metrics**: Smooth acceleration, minimal jerk
 - **Adaptability**: Performance across diverse driving scenarios
 
+
+
 ## 🔬 Research Applications
 
 AVDecisionLLM enables research in:
@@ -141,7 +193,6 @@ AVDecisionLLM enables research in:
 - **Multi-Agent Systems**: Cooperative vehicle behavior modeling
 - **Transfer Learning**: Adaptation to new driving environments
 - **Human-AI Interaction**: Natural communication between humans and autonomous systems
-
 
 ## 📞 Contact
 
