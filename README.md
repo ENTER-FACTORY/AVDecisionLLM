@@ -166,7 +166,7 @@ curl http://localhost:8000/v1/chat/completions \
     "messages": [
       {
         "role": "user",
-        "content": "车辆在十字路口遇到黄灯，前方有行人过马路，应该如何决策？"
+        "content": "When a vehicle encounters a yellow light at an intersection and there are pedestrians crossing the road ahead, what decision should the driver make?"
       }
     ],
     "max_tokens": 512,
