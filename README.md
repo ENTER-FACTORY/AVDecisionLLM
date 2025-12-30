@@ -194,13 +194,3 @@ AVDecisionLLM enables research in:
 - **Transfer Learning**: Adaptation to new driving environments
 - **Human-AI Interaction**: Natural communication between humans and autonomous systems
 
-## 📞 Contact
-
-For questions about this ongoing research project:
-- Email: [wanganzheng@whut.edu.cn]
-
----
-
-*AVDecisionLLM: Bridging the gap between natural language understanding and autonomous driving intelligence.*
-
-**Status**: Research in Progress | **Paper**: In Preparation
